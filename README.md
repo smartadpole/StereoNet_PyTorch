@@ -58,6 +58,11 @@ Model checkpoint can be downloaded here: https://www.dropbox.com/s/9gpjfe3r1rfch
 * 3 downsampling (1/8 resolution) and 3 refinement layers
 * Validation EPE of 3.93 for all pixels (including >256).
 
+test images:
+```
+python test_image.py --gpu_id 0 --data_path images1/ --load_path trained/epoch=20-step=744533.ckpt --output result1/
+```
+
 ## Notes
 
 **Currently training (2021-10-03) (~12hrs per epoch on my 1070)**
