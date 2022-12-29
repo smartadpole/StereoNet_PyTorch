@@ -175,11 +175,11 @@ class Kitti2015Dataset(
 
             disp_left= disp_loader(self.left_disp_path[index])
             disp_left = disp_left[..., np.newaxis]
-            disp_left = np.ascontiguousarray(disp_left)
+            disp_left = np.ascontiguousarray(disp_left, dtype=np.float32)/256
 
             disp_right= disp_loader(self.right_disp_path[index])
             disp_right = disp_right[..., np.newaxis]
-            disp_right = np.ascontiguousarray(disp_right)
+            disp_right = np.ascontiguousarray(disp_right, dtype=np.float32)/256
 
             # I'm not sure why I need the following type ignore...
             sample: st.Sample_Numpy = {'left': left, 'right': right, 'disp_left': disp_left,
