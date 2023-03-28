@@ -3,13 +3,14 @@ Helper functions for StereoNet training.
 
 Includes a dataset object for the Scene Flow image and disparity dataset.
 """
-
+import os
 from typing import Optional, Tuple, List
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import torch
+from PIL import Image
 from torch.utils.data import Dataset
 from skimage import io
 import torchvision.transforms as T
@@ -26,6 +27,10 @@ def image_loader(path: Path) -> npt.NDArray[np.uint8]:  # pylint: disable=missin
 
 def pfm_loader(path: Path) -> Tuple[npt.NDArray[np.float32], float]:  # pylint: disable=missing-function-docstring
     pfm: Tuple[npt.NDArray[np.float32], float] = utils_io.readPFM(path)
+    return pfm
+
+def disp_loader(path: Path) -> Tuple[npt.NDArray[np.float32], float]:  # pylint: disable=missing-function-docstring
+    pfm: Tuple[npt.NDArray[np.float32], float] = np.array(Image.open(path)).astype("float32")
     return pfm
 
 
@@ -128,6 +133,90 @@ class SceneflowDataset(Dataset):  # type: ignore[type-arg]  # I don't know why t
             right_disp_path.append(dr_path)
 
         return (left_image_path, right_image_path, left_disp_path, right_disp_path)
+
+class Kitti2015Dataset(
+        Dataset):  # type: ignore[type-arg]  # I don't know why this typing ignore is needed on the class level...
+        """
+        Sceneflow dataset composed of FlyingThings3D, Driving, and Monkaa
+        https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html
+
+        Download the RGB (cleanpass) PNG image and the Disparity files
+
+        The train set includes FlyingThings3D Train folder and all files in Driving and Monkaa folders
+        The test set includes FlyingThings3D Test folder
+        """
+
+        def __init__(self,
+                     root_path: Path,
+                     transforms: st.TorchTransformers,
+                     string_exclude: Optional[str] = None,
+                     string_include: Optional[str] = None,
+                     mode: Optional[str] = None
+                     ):
+            self.root_path = root_path
+            self.string_exclude = string_exclude
+            self.string_include = string_include
+
+            if not isinstance(transforms, list):
+                _transforms = [transforms]
+            else:
+                _transforms = transforms
+
+            self.transforms = _transforms
+
+            self.left_image_path, self.right_image_path, self.left_disp_path, self.right_disp_path = self.get_paths_kitti(mode)
+
+        def __len__(self) -> int:
+            return len(self.left_image_path)
+
+        def __getitem__(self, index: int) -> st.Sample_Torch:
+            left = image_loader(self.left_image_path[index])
+            right = image_loader(self.right_image_path[index])
+
+            disp_left= disp_loader(self.left_disp_path[index])
+            disp_left = disp_left[..., np.newaxis]
+            disp_left = np.ascontiguousarray(disp_left, dtype=np.float32)/256
+
+            disp_right= disp_loader(self.right_disp_path[index])
+            disp_right = disp_right[..., np.newaxis]
+            disp_right = np.ascontiguousarray(disp_right, dtype=np.float32)/256
+
+            # I'm not sure why I need the following type ignore...
+            sample: st.Sample_Numpy = {'left': left, 'right': right, 'disp_left': disp_left,
+                                       'disp_right': disp_right}  # type: ignore[assignment]
+
+            torch_sample = ToTensor()(sample)
+
+            for transform in self.transforms:
+                torch_sample = transform(torch_sample)
+
+            return torch_sample
+
+        def get_paths_kitti(self, mode) -> Tuple[List[Path], List[Path], List[Path], List[Path]]:
+            left_fold = os.path.join(self.root_path, 'image_2/')
+            right_fold = os.path.join(self.root_path, 'image_3/')
+            disp_L = os.path.join(self.root_path, 'disp_occ_0/')
+            disp_R = os.path.join(self.root_path, 'disp_occ_1/')
+
+            image = [img for img in os.listdir(left_fold) if img.find('_10') > -1]
+
+            train = image[:160]
+            val = image[160:]
+
+            left_train = [os.path.join(left_fold, img) for img in train]
+            right_train = [os.path.join(right_fold, img) for img in train]
+            disp_train_L = [os.path.join(disp_L, img) for img in train]
+            disp_train_R = [disp_R+img for img in train]
+
+            left_val = [os.path.join(left_fold, img) for img in val]
+            right_val = [os.path.join(right_fold, img) for img in val]
+            disp_val_L = [os.path.join(disp_L, img) for img in val]
+            disp_val_R = [disp_R+img for img in val]
+
+            if mode == 'train':
+                return (left_train, right_train, disp_train_L, disp_train_R)
+            else:
+                return (left_val, right_val, disp_val_L, disp_val_R)
 
 
 # class RandomResizedCrop(st.Transformer):
